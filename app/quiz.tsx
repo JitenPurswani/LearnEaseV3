@@ -1,6 +1,5 @@
-// REACT //
 import React, { useState, useEffect } from "react";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 // REACT NATIVE //
 import {
@@ -11,116 +10,95 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
+import axios from "axios";
 
-const quizData = [
-  {
-    question:
-      "By the time the meeting started, the team had already discussed the main points in detail. Which tense describes the action that was completed before another past event?",
-    options: [
-      "Present Perfect",
-      "Past Perfect",
-      "Past Continuous",
-      "Future Perfect",
-    ],
-    correctOption: "Past Perfect",
-  },
-  {
-    question: "Which sentence is in the Future Perfect tense?",
-    options: [
-      "She will have completed the project by next week.",
-      "She is completing the project.",
-      "She completes the project daily.",
-      "She completed the project yesterday.",
-    ],
-    correctOption: "She will have completed the project by next week.",
-  },
-  {
-    question: "Identify the sentence in Past Continuous tense.",
-    options: [
-      "I eat breakfast every morning.",
-      "I was eating breakfast when the phone rang.",
-      "I will be eating breakfast at 9 AM tomorrow.",
-      "I have eaten breakfast already.",
-    ],
-    correctOption: "I was eating breakfast when the phone rang.",
-  },
-  {
-    question: "Which sentence correctly uses the Past Perfect tense?",
-    options: [
-      "She has completed her assignment.",
-      "She had completed her assignment before the deadline.",
-      "She completes her assignment on time.",
-      "She will have completed her assignment by tomorrow.",
-    ],
-    correctOption: "She had completed her assignment before the deadline.",
-  },
-  {
-    question: "Which of the following is in the Present Continuous tense?",
-    options: [
-      "They were watching a movie last night.",
-      "They watch movies every weekend.",
-      "They are watching a movie right now.",
-      "They have watched that movie before.",
-    ],
-    correctOption: "They are watching a movie right now.",
-  },
-  {
-    question: "Which sentence is an example of the Simple Past tense?",
-    options: [
-      "She had gone to the market before I arrived.",
-      "She went to the market yesterday.",
-      "She is going to the market now.",
-      "She has gone to the market.",
-    ],
-    correctOption: "She went to the market yesterday.",
-  },
-  {
-    question: "Which sentence is in the Future Continuous tense?",
-    options: [
-      "I will be traveling to Paris next summer.",
-      "I traveled to Paris last summer.",
-      "I travel to Paris every year.",
-      "I have traveled to Paris before.",
-    ],
-    correctOption: "I will be traveling to Paris next summer.",
-  },
-];
-
+type QuizQuestion = {
+  question: string;
+  options: string[];
+  correct_answer: string;
+};
 
 const QuizScreen = () => {
+  const { summary } = useLocalSearchParams();
+  const [quizData, setQuizData] = useState<QuizQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [score, setScore] = useState(0);
   const [timer, setTimer] = useState(30);
+  const [loading, setLoading] = useState(true);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
+  const handleOptionSelect = (option: string) => {
+    const newSelections = [...selectedOptions];
+    newSelections[currentQuestionIndex] = option;
+    setSelectedOptions(newSelections);
+  };
+
+  useEffect(() => {
+    if (!summary) return;
+    const fetchMCQs = async () => {
+      try {
+        const res = await axios.post("http://192.168.35.44:8000/generate_mcqs/", {
+          paragraph: summary,
+          num_questions: 5, 
+        });
+        
+        // Make sure we have valid questions data
+        if (res.data && res.data.mcqs && Array.isArray(res.data.mcqs)) {
+          setQuizData(res.data.mcqs);
+          console.log(res.data.mcqs);
+        } else {
+          console.error("Invalid questions data format:", res.data);
+          // Set empty array to prevent undefined errors
+          setQuizData([]);
+        }
+        setLoading(false);
+      } catch (error) {
+        console.error("API failed: ", error);
+        setLoading(false);
+        // Set empty array to prevent undefined errors
+        setQuizData([]);
+      }
+    };
+    fetchMCQs();
+  }, [summary]);
 
   // Timer Effect
   useEffect(() => {
-    if (timer > 0) {
+    // Only run timer if we have quiz data and haven't reached the end
+    if (timer > 0 && quizData.length > 0 && currentQuestionIndex < quizData.length&&!isSubmitted) {
       const interval = setInterval(() => {
         setTimer((prev) => prev - 1);
       }, 1000);
       return () => clearInterval(interval);
-    } else {
+    } else if (quizData.length > 0 && currentQuestionIndex < quizData.length) {
+      // Only auto-progress if we have quiz data and haven't reached the end
       handleNext();
     }
-  }, [timer]);
+  }, [timer, quizData, currentQuestionIndex]);
 
-  const router = useRouter(); // Initialize router
+  const router = useRouter();
 
   const handleNext = () => {
-    if (selectedOption === quizData[currentQuestionIndex].correctOption) {
-      setScore(score + 1);
-    }
-
     if (currentQuestionIndex < quizData.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
-      setSelectedOption(null);
-      setTimer(30); // Reset timer only when moving forward
+      setTimer(30);
     } else {
-      // Navigate to ScoreCard and pass score data
+      // Calculate correct score
+      const score = selectedOptions.filter(
+        (option, index) => option === quizData[index].correct_answer
+      ).length;
+
+      // Pass selected answers AND correct answers properly
       router.push({
         pathname: "/score-card",
-        params: { score: score.toString(), total: quizData.length.toString() },
+        params: {
+          score: score.toString(),
+          total: quizData.length.toString(),
+          questions: JSON.stringify(quizData.map((q) => q.question)), // Send only questions
+          selectedOptions: JSON.stringify(selectedOptions), // Send user selected options
+          correctOptions: JSON.stringify(quizData.map((q) => q.correct_answer)), // Send correct answers
+        },
       });
     }
   };
@@ -128,11 +106,45 @@ const QuizScreen = () => {
   const handlePrevious = () => {
     if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex(currentQuestionIndex - 1);
-      setSelectedOption(null);
-      // Timer remains unchanged
+      setTimer(30);
     }
   };
 
+  // Show loading state if data isn't ready
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text style={{ textAlign: "center", fontSize: 18, marginTop: 50 }}>
+          Loading quiz...
+        </Text>
+      </View>
+    );
+  }
+
+  // Show a message if we have no quiz questions
+  if (!quizData || quizData.length === 0) {
+    return (
+      <View style={styles.container}>
+        <Text style={{ textAlign: "center", fontSize: 18, marginTop: 50 }}>
+          No quiz questions available. Please try again.
+        </Text>
+      </View>
+    );
+  }
+
+  // Make sure we have a valid current question
+  const currentQuestion = quizData[currentQuestionIndex];
+  if (!currentQuestion) {
+    return (
+      <View style={styles.container}>
+        <Text style={{ textAlign: "center", fontSize: 18, marginTop: 50 }}>
+          Error loading question. Please try again.
+        </Text>
+      </View>
+    );
+  }
+
+  // Now we can safely render the quiz UI
   return (
     <View style={styles.container}>
       {/* Top Section */}
@@ -163,32 +175,31 @@ const QuizScreen = () => {
       {/* Question */}
       <View style={styles.questionBox}>
         <Text style={styles.questionText}>
-          {quizData[currentQuestionIndex].question}
+          {currentQuestion.question}
         </Text>
       </View>
 
       {/* Options */}
       <FlatList
-        data={quizData[currentQuestionIndex].options}
+        data={currentQuestion.options || []}
         keyExtractor={(item, index) => index.toString()}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={[
               styles.optionButton,
-              selectedOption === item && styles.selectedOption,
+              selectedOptions[currentQuestionIndex] === item && styles.selectedOption,
             ]}
-            onPress={() => setSelectedOption(item)}
+            onPress={() => handleOptionSelect(item)}
           >
             <Text style={styles.optionText}>{item}</Text>
           </TouchableOpacity>
         )}
       />
 
-      {/* Next/Submit Button */}
-      <TouchableOpacity
-        style={[styles.nextButton, !selectedOption && styles.disabledButton]}
+<TouchableOpacity
+        style={[styles.nextButton, !selectedOptions[currentQuestionIndex] && styles.disabledButton]}
         onPress={handleNext}
-        disabled={!selectedOption}
+        disabled={!selectedOptions[currentQuestionIndex]}
       >
         <Text style={styles.nextButtonText}>
           {currentQuestionIndex === quizData.length - 1 ? "Submit" : "Next"}

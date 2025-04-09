@@ -65,7 +65,7 @@ export default function SummarizerScreen() {
     try {
       // 1️⃣ Upload PDF to Express (local storage + MongoDB)
       const uploadResponse = await axios.post(
-        "http://192.168.43.185:5000/api/upload",
+        "http://192.168.35.44:5000/api/upload",
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
@@ -78,7 +78,7 @@ export default function SummarizerScreen() {
       } else {
         
         const summaryResponse = await axios.post(
-          "http://192.168.43.185:8000/upload_pdf/",
+          "http://192.168.35.44:8000/upload_pdf/",
           formData,
           { headers: { "Content-Type": "multipart/form-data" } }
         );
@@ -146,7 +146,7 @@ export default function SummarizerScreen() {
             <View style={styles.divider} />
 
             {/* Quiz Button */}
-            <TouchableOpacity style={styles.quizButton} onPress={() => router.push("/quiz")}>
+            <TouchableOpacity style={styles.quizButton} onPress={() => router.push({pathname: "/quiz", params: {summary} })}>
               <Text style={styles.quizText}>Quiz</Text>
             </TouchableOpacity>
 
